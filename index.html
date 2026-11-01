@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="운동 기록">
+    <title>나만의 운동 기록기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .tab-btn.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
+        .tab-btn { transition: all 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col relative pb-24">
+
+    <!-- Header: 날짜 및 체중 -->
+    <header class="sticky top-0 z-10 bg-gray-900/80 backdrop-blur-md border-b border-gray-800 p-5">
+        <div class="flex justify-between items-center mb-2">
+            <h1 class="text-2xl font-bold tracking-tight text-white" id="todayDateStr"></h1>
+            <button onclick="openSettingsModal()" class="relative p-2 text-gray-400 hover:text-white bg-gray-800 rounded-full transition-colors active:scale-95 shadow-sm">
+                <i data-lucide="settings" class="w-5 h-5"></i>
+                <!-- 미전송 데이터가 있을 때 표시되는 점 -->
+                <span id="syncDot" class="hidden absolute top-0.5 right-0.5 w-2.5 h-2.5 bg-amber-400 rounded-full border-2 border-gray-900"></span>
+            </button>
+        </div>
+        <div class="flex items-center space-x-2 bg-gray-800 rounded-xl p-3 shadow-inner">
+            <i data-lucide="scale" class="w-5 h-5 text-gray-400"></i>
+            <span class="text-sm text-gray-300">오늘의 체중:</span>
+            <input type="number" inputmode="decimal" id="bodyWeightInput" placeholder="00.0"
+                class="bg-transparent border-b border-gray-600 w-16 text-right text-white focus:outline-none focus:border-blue-500 transition-colors"
+                onchange="saveBodyWeight(this.value)">
+            <span class="text-sm text-gray-400">kg</span>
+        </div>
+    </header>
+
+    <main class="flex-1 p-4 space-y-4">
+        <section class="bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/30 rounded-xl p-3 shadow-lg">
+            <div class="flex items-center space-x-2 mb-1.5">
+                <i data-lucide="history" class="w-4 h-4 text-indigo-400"></i>
+                <h2 class="text-sm font-semibold text-indigo-200">직전 운동 요약</h2>
+            </div>
+            <p id="lastWorkoutSummary" class="text-xs text-indigo-100/80 leading-relaxed">기록을 불러오는 중...</p>
+        </section>
+
+        <section>
+            <h2 class="text-base font-bold text-white mb-2 flex items-center">
+                <i data-lucide="dumbbell" class="w-4 h-4 mr-1.5 text-blue-400"></i>오늘의 운동
+            </h2>
+            <div id="todaysWorkoutList" class="space-y-2.5"></div>
+        </section>
+    </main>
+
+    <button onclick="openHistoryModal()" class="fixed bottom-24 right-7 w-12 h-12 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full shadow-lg shadow-indigo-900/50 flex items-center justify-center transition-transform transform active:scale-95 z-20">
+        <i data-lucide="calendar-days" class="w-5 h-5"></i>
+    </button>
+
+    <button onclick="openModal()" class="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-500 text-white rounded-full shadow-xl shadow-blue-900/50 flex items-center justify-center transition-transform transform active:scale-95 z-20">
+        <i data-lucide="plus" class="w-8 h-8"></i>
+    </button>
+
+    <!-- Workout Entry Modal -->
+    <div id="workoutModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex flex-col justify-end">
+        <div class="bg-gray-900 rounded-t-3xl shadow-2xl h-[85vh] flex flex-col transform transition-transform border-t border-gray-800">
+            <div class="flex justify-between items-center p-5 border-b border-gray-800">
+                <h3 class="text-xl font-bold text-white">운동 추가</h3>
+                <button onclick="closeModal()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div id="workoutModalContent" class="flex-1 overflow-y-auto p-5 space-y-6">
+                <div class="flex space-x-2 overflow-x-auto no-scrollbar pb-2" id="bodyPartTabs"></div>
+                <div id="exerciseList" class="grid grid-cols-2 gap-3"></div>
+
+                <div id="inputArea" class="hidden bg-gray-800/50 p-4 rounded-2xl border border-gray-700 space-y-4">
+                    <h4 id="selectedExerciseTitle" class="text-lg font-bold text-blue-400 text-center">운동명</h4>
+                    <div class="bg-blue-900/30 text-blue-200 p-3 rounded-xl text-sm text-center border border-blue-800/50" id="lastRecordBanner">이전 기록을 찾는 중...</div>
+
+                    <div class="flex items-center justify-center space-x-4">
+                        <div class="flex flex-col items-center w-24">
+                            <label class="text-xs text-gray-400 mb-1">무게(kg)</label>
+                            <input type="number" inputmode="decimal" id="weightInput" class="w-full bg-gray-700 text-white text-center text-xl py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0">
+                        </div>
+                        <span class="text-2xl text-gray-500 mt-5">×</span>
+                        <div class="flex flex-col items-center w-24">
+                            <label class="text-xs text-gray-400 mb-1">횟수(회)</label>
+                            <input type="number" inputmode="numeric" id="repsInput" class="w-full bg-gray-700 text-white text-center text-xl py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0">
+                        </div>
+                    </div>
+
+                    <button onclick="addSet()" class="w-full py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded-xl shadow-md active:scale-95 transition-all border border-gray-600">+ 세트 추가</button>
+
+                    <div id="currentSessionSetsList" class="space-y-2 mt-4 max-h-48 overflow-y-auto no-scrollbar"></div>
+
+                    <button onclick="completeExercise()" class="w-full py-3 mt-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-all">이 운동 완료하기</button>
+                    <p class="text-[11px] text-gray-500 text-center">세트는 추가할 때마다 임시 저장됩니다. 창을 닫거나 다른 종목을 고르면 자동으로 기록에 저장돼요.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="historyModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex flex-col justify-end">
+        <div class="bg-gray-900 rounded-t-3xl shadow-2xl h-[75vh] flex flex-col transform transition-transform border-t border-gray-800">
+            <div class="flex justify-between items-center p-5 border-b border-gray-800">
+                <h3 class="text-xl font-bold text-white flex items-center">
+                    <i data-lucide="calendar-days" class="w-6 h-6 mr-2 text-indigo-400"></i>전체 기록 요약
+                </h3>
+                <button onclick="closeHistoryModal()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5 space-y-4">
+                <div class="w-full bg-gray-800/80 rounded-2xl border border-gray-700 p-4 shadow-sm">
+                    <h4 class="text-sm font-semibold text-gray-300 mb-3 flex items-center">
+                        <i data-lucide="trending-up" class="w-4 h-4 mr-1.5 text-blue-400"></i>체중 변화
+                    </h4>
+                    <canvas id="weightChart" class="w-full h-[150px]"></canvas>
+                </div>
+                <div id="historyListArea" class="space-y-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings / Backup Modal -->
+    <div id="settingsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex flex-col justify-end">
+        <div class="bg-gray-900 rounded-t-3xl shadow-2xl flex flex-col transform transition-transform border-t border-gray-800 pb-8 max-h-[85vh]">
+            <div class="flex justify-between items-center p-5 border-b border-gray-800">
+                <h3 class="text-xl font-bold text-white flex items-center">
+                    <i data-lucide="settings" class="w-6 h-6 mr-2 text-gray-400"></i>설정 및 백업
+                </h3>
+                <button onclick="closeSettingsModal()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-5 overflow-y-auto">
+                <!-- 구글 시트 자동 백업 -->
+                <div class="bg-gray-800/60 border border-gray-700 rounded-xl p-4 space-y-3">
+                    <p class="font-bold text-white flex items-center text-sm">
+                        <i data-lucide="cloud" class="w-4 h-4 mr-1.5 text-green-400"></i>구글 시트 자동 백업
+                    </p>
+                    <input id="syncUrlInput" type="url" placeholder="Apps Script 웹 앱 URL (https://script.google.com/...)"
+                        class="w-full bg-gray-700 text-white text-xs px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+                    <input id="syncTokenInput" type="password" placeholder="비밀키 (Apps Script의 SECRET과 동일하게)"
+                        class="w-full bg-gray-700 text-white text-xs px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="saveSyncSettings()" class="py-2.5 bg-green-700 hover:bg-green-600 text-white text-sm font-bold rounded-lg active:scale-95">설정 저장</button>
+                        <button onclick="testConnection()" class="py-2.5 bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold rounded-lg active:scale-95">연결 테스트</button>
+                    </div>
+                    <p id="syncStatusText" class="text-xs text-gray-400 leading-relaxed"></p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="flushQueue(true)" class="py-2.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-lg active:scale-95">미전송분 지금 보내기</button>
+                        <button onclick="sendAllRecords()" class="py-2.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-lg active:scale-95">기존 기록 전체 보내기</button>
+                    </div>
+                </div>
+
+                <div class="bg-blue-900/30 border border-blue-800/50 rounded-xl p-4 text-sm text-blue-200">
+                    <p class="font-bold mb-1 flex items-center"><i data-lucide="info" class="w-4 h-4 mr-1"></i>데이터 안전 보관 안내</p>
+                    <p class="text-xs opacity-90 break-keep">브라우저 캐시 삭제나 폰 용량 부족 시 폰 안의 데이터가 유실될 수 있습니다. 구글 시트 백업과 함께 가끔 <b>'백업 파일'</b>도 받아 두세요.</p>
+                </div>
+
+                <div class="space-y-3 pt-2">
+                    <button onclick="exportData()" class="w-full py-4 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-xl shadow-md border border-gray-700 flex justify-center items-center transition-colors active:scale-95">
+                        <i data-lucide="download" class="w-5 h-5 mr-2"></i> 데이터 백업 (파일로 저장)
+                    </button>
+                    <label class="w-full py-4 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-xl shadow-md border border-gray-700 flex justify-center items-center cursor-pointer transition-colors active:scale-95">
+                        <i data-lucide="upload" class="w-5 h-5 mr-2"></i> 데이터 복구 (파일 불러오기)
+                        <input type="file" accept=".json" class="hidden" onchange="importData(event)">
+                    </label>
+                </div>
+
+                <div class="border-t border-gray-800 pt-6 mt-4">
+                    <button onclick="resetData()" class="w-full py-3 bg-red-900/20 hover:bg-red-900/40 text-red-400 font-bold rounded-xl border border-red-900/30 transition-colors">모든 데이터 초기화</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ================= 1. 기본 설정 및 데이터 =================
+        lucide.createIcons();
+
+        const getTodayDate = () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const today = getTodayDate();
+        let selectedBodyPart = '가슴';
+        let selectedExercise = null;
+        let currentSessionSets = []; // 아직 '완료'하지 않은 세트 (임시 저장 대상)
+
+        const defaultExercises = {
+            '가슴': ['벤치프레스', '인클라인 벤치프레스', '덤벨 플라이'],
+            '등': ['풀업', '랫풀다운', '바벨 로우'],
+            '하체': ['스쿼트', '레그프레스', '레그 익스텐션'],
+            '어깨': ['오버헤드 프레스', '사이드 레터럴 레이즈'],
+            '이두': ['덤벨 컬', '바벨 컬', '해머 컬'],
+            '삼두': ['트라이셉스 익스텐션', '케이블 푸시다운'],
+            '코어': ['크런치', '플랭크']
+        };
+
+        // localStorage 읽기 (파일이 깨져 있어도 앱이 멈추지 않도록)
+        function loadJSON(key, fallback) {
+            try {
+                const raw = localStorage.getItem(key);
+                return raw ? JSON.parse(raw) : fallback;
+            } catch (e) {
+                console.error(`${key} 읽기 실패`, e);
+                return fallback;
+            }
+        }
+        function saveJSON(key, value) {
+            try {
+                localStorage.setItem(key, JSON.stringify(value));
+            } catch (e) {
+                console.error(`${key} 저장 실패`, e);
+                alert('폰에 저장하지 못했습니다. 저장 공간을 확인해 주세요.');
+            }
+        }
+
+        let workouts = loadJSON('workouts', []);
+        let customExercises = loadJSON('customExercises', JSON.parse(JSON.stringify(defaultExercises)));
+        let dailyStats = loadJSON('dailyStats', {});
+
+        // 세트마다 겹치지 않는 고유 ID (구글 시트 중복 방지에 사용)
+        const makeId = () => Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+
+        // ================= 2. 초기화 =================
+        async function init() {
+            if (navigator.storage && navigator.storage.persist) {
+                try {
+                    const isPersisted = await navigator.storage.persist();
+                    console.log(`영구 저장소 상태: ${isPersisted ? '활성화됨' : '비활성화됨'}`);
+                } catch (e) {
+                    console.log('영구 저장소 권한 요청 실패', e);
+                }
+            }
+
+            const dateObj = new Date();
+            document.getElementById('todayDateStr').innerText = `${dateObj.getFullYear()}. ${dateObj.getMonth() + 1}. ${dateObj.getDate()}`;
+
+            if (dailyStats[today]) {
+                document.getElementById('bodyWeightInput').value = dailyStats[today].weight || '';
+            }
+
+            renderLastWorkoutSummary();
+            renderTodaysWorkout();
+            renderTabs();
+
+            restoreDraft();      // 앱이 꺼지기 전 입력 중이던 세트 복원
+            updateSyncStatus();
+            flushQueue();        // 못 보낸 데이터가 있으면 전송 시도
+        }
+
+        function saveBodyWeight(weight) {
+            if (!dailyStats[today]) dailyStats[today] = {};
+            dailyStats[today].weight = weight;
+            saveJSON('dailyStats', dailyStats);
+
+            enqueueItems([{ key: 'weight:' + today, type: 'weight', data: { date: today, weight: weight } }]);
+            flushQueue();
+        }
+
+        // ================= 3. 임시 저장 (입력 중인 세트) =================
+        function saveDraft() {
+            if (currentSessionSets.length > 0) {
+                saveJSON('draftSession', {
+                    bodyPart: selectedBodyPart,
+                    exercise: selectedExercise,
+                    sets: currentSessionSets
+                });
+            } else {
+                localStorage.removeItem('draftSession');
+            }
+        }
+
+        function restoreDraft() {
+            const draft = loadJSON('draftSession', null);
+            if (!draft || !draft.sets || draft.sets.length === 0) return;
+
+            selectedBodyPart = draft.bodyPart;
+            openModal();
+            selectExercise(draft.exercise, draft.sets);
+        }
+
+        // 임시 세트를 정식 기록으로 저장 + 시트 전송 대기열에 추가
+        function commitSessionSets() {
+            if (currentSessionSets.length === 0) return false;
+
+            workouts = workouts.concat(currentSessionSets);
+            saveJSON('workouts', workouts);
+
+            enqueueItems(currentSessionSets.map(s => ({ key: 'set:' + s.id, type: 'set', data: s })));
+
+            currentSessionSets = [];
+            saveDraft();
+            renderCurrentSessionSets();
+            renderTodaysWorkout();
+            flushQueue();
+            return true;
+        }
+
+        // ================= 4. 구글 시트 동기화 =================
+        let isSyncing = false;
+        let lastSyncError = '';
+
+        function getSyncConfig() {
+            return {
+                url: (localStorage.getItem('syncUrl') || '').trim(),
+                token: localStorage.getItem('syncToken') || ''
+            };
+        }
+
+        function loadQueue() { return loadJSON('syncQueue', []); }
+        function saveQueue(q) { saveJSON('syncQueue', q); }
+
+        // 같은 key(같은 세트, 같은 날 체중)는 최신 것 하나만 남김
+        function enqueueItems(items) {
+            if (!getSyncConfig().url) return; // 시트 연결 전에는 쌓지 않음
+            const queue = loadQueue();
+            items.forEach(item => {
+                const idx = queue.findIndex(q => q.key === item.key);
+                if (idx >= 0) queue[idx] = item;
+                else queue.push(item);
+            });
+            saveQueue(queue);
+            updateSyncStatus();
+        }
+
+        async function postToSheet(items) {
+            const { url, token } = getSyncConfig();
+            // Content-Type을 지정하지 않으면 text/plain으로 전송되어 CORS 사전 요청을 피할 수 있음
+            const res = await fetch(url, {
+                method: 'POST',
+                body: JSON.stringify({ token: token, items: items })
+            });
+            const result = await res.json();
+            if (!result.ok) throw new Error(result.error || '알 수 없는 오류');
+            return result;
+        }
+
+        async function flushQueue(manual = false) {
+            const { url } = getSyncConfig();
+            if (!url) {
+                if (manual) alert('먼저 구글 시트 URL을 설정해 주세요.');
+                return;
+            }
+            if (isSyncing) return;
+
+            const queue = loadQueue();
+            if (queue.length === 0) {
+                updateSyncStatus();
+                if (manual) alert('보낼 데이터가 없습니다.');
+                return;
+            }
+            if (!navigator.onLine) {
+                lastSyncError = '오프라인 상태 (연결되면 자동 전송)';
+                updateSyncStatus();
+                return;
+            }
+
+            isSyncing = true;
+            updateSyncStatus();
+            const batch = queue.slice(0, 200); // 한 번에 200건씩
+            let success = false;
+
+            try {
+                await postToSheet(batch);
+                const sentKeys = new Set(batch.map(i => i.key));
+                // 전송 중에 새로 추가된 항목은 남기고, 보낸 것만 제거
+                saveQueue(loadQueue().filter(i => !sentKeys.has(i.key)));
+                localStorage.setItem('lastSyncAt', new Date().toISOString());
+                lastSyncError = '';
+                success = true;
+            } catch (e) {
+                lastSyncError = e.message;
+                console.error('시트 전송 실패', e);
+            } finally {
+                isSyncing = false;
+                updateSyncStatus();
+            }
+
+            if (success && loadQueue().length > 0) {
+                flushQueue(); // 남은 것 계속 전송
+            } else if (manual) {
+                alert(success ? '구글 시트로 전송했습니다.' : `전송 실패: ${lastSyncError}\n(데이터는 폰에 남아 있고 나중에 다시 보냅니다)`);
+            }
+        }
+
+        function updateSyncStatus() {
+            const { url } = getSyncConfig();
+            const pending = loadQueue().length;
+            const dot = document.getElementById('syncDot');
+            const statusEl = document.getElementById('syncStatusText');
+
+            dot.classList.toggle('hidden', !(url && pending > 0));
+
+            if (!url) {
+                statusEl.innerHTML = '상태: <span class="text-gray-300">연결 안 됨</span>';
+                return;
+            }
+            const lastAt = localStorage.getItem('lastSyncAt');
+            const lastStr = lastAt ? new Date(lastAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '없음';
+            let html = `상태: ${isSyncing ? '<span class="text-blue-300">전송 중…</span>' : '<span class="text-green-400">연결됨</span>'}`
+                + ` · 미전송 <span class="${pending ? 'text-amber-300 font-bold' : 'text-gray-300'}">${pending}건</span>`
+                + `<br>마지막 전송: ${lastStr}`;
+            if (lastSyncError) html += `<br><span class="text-red-400">최근 오류: ${lastSyncError}</span>`;
+            statusEl.innerHTML = html;
+        }
+
+        function saveSyncSettings() {
+            const url = document.getElementById('syncUrlInput').value.trim();
+            const token = document.getElementById('syncTokenInput').value;
+            if (url && !url.startsWith('https://script.google.com/')) {
+                alert('Apps Script 웹 앱 URL(https://script.google.com/...)을 입력해 주세요.');
+                return;
+            }
+            localStorage.setItem('syncUrl', url);
+            localStorage.setItem('syncToken', token);
+            lastSyncError = '';
+            updateSyncStatus();
+            alert(url ? '저장했습니다. "연결 테스트"로 확인해 보세요.' : '구글 시트 연결을 해제했습니다.');
+        }
+
+        async function testConnection() {
+            saveSyncSettingsSilently();
+            if (!getSyncConfig().url) { alert('URL을 입력해 주세요.'); return; }
+            try {
+                await postToSheet([]);
+                lastSyncError = '';
+                alert('연결 성공! 구글 시트와 통신이 됩니다.');
+            } catch (e) {
+                lastSyncError = e.message;
+                alert(`연결 실패: ${e.message}\n\nURL, 비밀키, 배포 설정(액세스: 모든 사용자)을 확인해 주세요.`);
+            }
+            updateSyncStatus();
+        }
+
+        function saveSyncSettingsSilently() {
+            localStorage.setItem('syncUrl', document.getElementById('syncUrlInput').value.trim());
+            localStorage.setItem('syncToken', document.getElementById('syncTokenInput').value);
+        }
+
+        // 기존 기록 전부 전송 (시트 쪽에서 ID로 중복을 걸러내므로 여러 번 눌러도 안전)
+        function sendAllRecords() {
+            if (!getSyncConfig().url) { alert('먼저 구글 시트 URL을 설정해 주세요.'); return; }
+            if (!confirm(`세트 기록 ${workouts.length}건과 체중 기록을 구글 시트로 보낼까요?\n(이미 시트에 있는 세트는 중복 저장되지 않습니다)`)) return;
+
+            // 예전 버전에서 ID가 없던 기록에 ID 부여
+            let changed = false;
+            workouts.forEach(w => { if (!w.id) { w.id = makeId(); changed = true; } });
+            if (changed) saveJSON('workouts', workouts);
+
+            const items = workouts.map(w => ({ key: 'set:' + w.id, type: 'set', data: w }));
+            Object.entries(dailyStats).forEach(([date, stat]) => {
+                if (stat.weight) items.push({ key: 'weight:' + date, type: 'weight', data: { date: date, weight: stat.weight } });
+            });
+            enqueueItems(items);
+            flushQueue(true);
+        }
+
+        // 네트워크가 돌아오거나 앱을 다시 열면 자동 재전송
+        window.addEventListener('online', () => flushQueue());
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') flushQueue();
+        });
+
+        // ================= 5. 직전 운동 요약 =================
+        function renderLastWorkoutSummary() {
+            const summaryEl = document.getElementById('lastWorkoutSummary');
+            const pastWorkouts = workouts.filter(w => w.date !== today);
+            if (pastWorkouts.length === 0) {
+                summaryEl.innerText = '이전 운동 기록이 없습니다. 오늘 첫 기록을 남겨보세요!';
+                return;
+            }
+            const dates = [...new Set(pastWorkouts.map(w => w.date))].sort().reverse();
+            const lastDate = dates[0];
+            const lastDayWorkouts = pastWorkouts.filter(w => w.date === lastDate);
+
+            const grouped = {};
+            lastDayWorkouts.forEach(w => {
+                if (!grouped[w.bodyPart]) grouped[w.bodyPart] = new Set();
+                grouped[w.bodyPart].add(w.exercise);
+            });
+
+            const summaryText = [];
+            for (const [part, exercisesSet] of Object.entries(grouped)) {
+                summaryText.push(`${part}(${Array.from(exercisesSet).join(', ')})`);
+            }
+            const formattedDate = lastDate.substring(5).replace('-', '/');
+            summaryEl.innerHTML = `<span class="font-bold text-white">${formattedDate}</span> : ${summaryText.join(' / ')}`;
+        }
+
+        // ================= 6. 오늘의 운동 =================
+        function renderTodaysWorkout() {
+            const listEl = document.getElementById('todaysWorkoutList');
+            const todaysData = workouts.filter(w => w.date === today);
+
+            if (todaysData.length === 0) {
+                listEl.innerHTML = `<div class="text-center p-4 bg-gray-800 rounded-xl text-gray-500 border border-gray-700 border-dashed text-sm">오늘 아직 완료한 운동이 없습니다.</div>`;
+                return;
+            }
+
+            const groupedByPart = {};
+            todaysData.forEach(w => {
+                if (!groupedByPart[w.bodyPart]) groupedByPart[w.bodyPart] = {};
+                if (!groupedByPart[w.bodyPart][w.exercise]) groupedByPart[w.bodyPart][w.exercise] = [];
+                groupedByPart[w.bodyPart][w.exercise].push(w);
+            });
+
+            let html = '';
+            for (const [part, exercises] of Object.entries(groupedByPart)) {
+                let exercisesHTML = '';
+                let partTotalSets = 0;
+                for (const [exercise, sets] of Object.entries(exercises)) {
+                    partTotalSets += sets.length;
+                    const setsString = sets.map(s => `${s.weight}kg ${s.reps}회`).join(', ');
+                    exercisesHTML += `
+                        <div class="leading-tight mb-2 last:mb-0">
+                            <span class="font-semibold text-gray-200 text-sm mr-1">${exercise}: <span class="text-blue-300 font-bold text-xs">총 ${sets.length}세트</span></span>
+                            <span class="text-gray-400 text-xs break-keep block sm:inline mt-0.5 sm:mt-0">(${setsString})</span>
+                        </div>`;
+                }
+                html += `
+                    <div class="bg-gray-800/80 rounded-xl p-3 shadow-sm border border-gray-700/80">
+                        <div class="flex items-center mb-2 pb-2 border-b border-gray-700/50">
+                            <span class="text-xs font-bold bg-blue-900/80 text-blue-200 px-2.5 py-1 rounded-md">
+                                ${part} <span class="opacity-80 font-normal ml-0.5">(총 ${partTotalSets}세트)</span>
+                            </span>
+                        </div>
+                        <div>${exercisesHTML}</div>
+                    </div>`;
+            }
+            listEl.innerHTML = html;
+        }
+
+        // ================= 7. 운동 입력 모달 =================
+        function openModal() {
+            document.getElementById('workoutModal').classList.remove('hidden');
+            renderTabs();
+            renderExercises(selectedBodyPart);
+            if (currentSessionSets.length === 0) {
+                document.getElementById('inputArea').classList.add('hidden');
+            }
+        }
+
+        function closeModal() {
+            commitSessionSets(); // 입력한 세트는 닫아도 저장됨
+            document.getElementById('workoutModal').classList.add('hidden');
+            selectedExercise = null;
+        }
+
+        function renderTabs() {
+            const tabsEl = document.getElementById('bodyPartTabs');
+            const parts = Object.keys(customExercises);
+            tabsEl.innerHTML = parts.map(part => `
+                <button onclick="changeTab('${part}')"
+                    class="tab-btn whitespace-nowrap px-4 py-2 rounded-full border border-gray-600 text-sm font-medium text-gray-300 ${part === selectedBodyPart ? 'active' : 'bg-gray-800'}">
+                    ${part}
+                </button>`).join('');
+        }
+
+        function changeTab(part) {
+            commitSessionSets();
+            selectedExercise = null;
+            selectedBodyPart = part;
+            renderTabs();
+            renderExercises(part);
+            document.getElementById('inputArea').classList.add('hidden');
+        }
+
+        function renderExercises(part) {
+            const listEl = document.getElementById('exerciseList');
+            const exercises = customExercises[part] || [];
+
+            let html = exercises.map(ex => `
+                <div class="relative">
+                    <button onclick="selectExercise('${ex}')" class="w-full p-3 bg-gray-800 border ${ex === selectedExercise ? 'border-blue-500' : 'border-gray-700'} rounded-xl text-sm text-gray-200 hover:border-blue-500 active:bg-gray-700 transition-colors text-center shadow-sm">
+                        ${ex}
+                    </button>
+                    <button onclick="deleteExercise('${part}', '${ex}', event)" class="absolute -top-1.5 -right-1.5 bg-gray-700 hover:bg-red-500 text-gray-300 hover:text-white border border-gray-600 rounded-full w-6 h-6 flex items-center justify-center shadow-md transition-colors z-10" title="삭제">
+                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>`).join('');
+
+            html += `
+                <button onclick="addNewExercise()" class="p-3 bg-gray-900 border border-dashed border-gray-600 rounded-xl text-sm text-gray-400 hover:text-white flex items-center justify-center space-x-1">
+                    <i data-lucide="plus" class="w-4 h-4"></i> <span>새 운동</span>
+                </button>`;
+
+            listEl.innerHTML = html;
+            lucide.createIcons();
+        }
+
+        function addNewExercise() {
+            const newEx = prompt(`'${selectedBodyPart}' 부위에 추가할 새 운동 이름을 입력하세요.`);
+            if (newEx && newEx.trim() !== '') {
+                const trimmedEx = newEx.trim();
+                if (!customExercises || typeof customExercises !== 'object' || Array.isArray(customExercises)) {
+                    customExercises = JSON.parse(JSON.stringify(defaultExercises));
+                }
+                if (!customExercises[selectedBodyPart]) customExercises[selectedBodyPart] = [];
+                if (!customExercises[selectedBodyPart].includes(trimmedEx)) {
+                    customExercises[selectedBodyPart].push(trimmedEx);
+                    saveJSON('customExercises', customExercises);
+                }
+                selectExercise(trimmedEx);
+            }
+        }
+
+        function deleteExercise(part, exName, event) {
+            event.stopPropagation();
+            if (confirm(`'${exName}' 종목을 목록에서 삭제하시겠습니까?\n(이미 기록된 과거 운동 데이터는 지워지지 않습니다)`)) {
+                customExercises[part] = customExercises[part].filter(e => e !== exName);
+                saveJSON('customExercises', customExercises);
+                renderExercises(part);
+            }
+        }
+
+        // restoredSets: 앱 재시작 시 임시 저장에서 복원한 세트
+        function selectExercise(ex, restoredSets) {
+            if (restoredSets) {
+                currentSessionSets = restoredSets;
+            } else if (ex !== selectedExercise) {
+                commitSessionSets(); // 다른 종목으로 넘어가면 이전 종목 세트는 저장
+            }
+
+            selectedExercise = ex;
+            document.getElementById('selectedExerciseTitle').innerText = ex;
+            document.getElementById('inputArea').classList.remove('hidden');
+            renderExercises(selectedBodyPart);
+            renderCurrentSessionSets();
+            loadLastRecord(ex);
+
+            // 이어서 하던 세트가 있으면 마지막 세트 값으로 입력창 채우기
+            if (currentSessionSets.length > 0) {
+                const last = currentSessionSets[currentSessionSets.length - 1];
+                document.getElementById('weightInput').value = last.weight;
+                document.getElementById('repsInput').value = last.reps;
+            }
+
+            scrollModalToBottom(100);
+        }
+
+        function scrollModalToBottom(delay) {
+            const modalContent = document.getElementById('workoutModalContent');
+            setTimeout(() => modalContent.scrollTo({ top: modalContent.scrollHeight, behavior: 'smooth' }), delay);
+        }
+
+        function loadLastRecord(exName) {
+            const bannerEl = document.getElementById('lastRecordBanner');
+            const wInput = document.getElementById('weightInput');
+            const rInput = document.getElementById('repsInput');
+
+            const pastRecords = workouts.filter(w => w.exercise === exName && w.date !== today);
+            if (pastRecords.length === 0) {
+                bannerEl.innerHTML = `최근 기록이 없습니다.<br><span class="text-xs text-blue-300">오늘 첫 세트를 기록해보세요!</span>`;
+                wInput.value = '';
+                rInput.value = '';
+                return;
+            }
+
+            const dates = [...new Set(pastRecords.map(w => w.date))].sort().reverse();
+            const lastDate = dates[0];
+            const lastDateRecords = pastRecords.filter(w => w.date === lastDate);
+            const lastSet = lastDateRecords[lastDateRecords.length - 1];
+            const totalSets = lastDateRecords.length;
+
+            const formattedDate = lastDate.substring(5).replace('-', '/');
+            bannerEl.innerHTML = `<span class="font-bold text-white">지난 기록 (${formattedDate})</span><br/>${lastSet.weight}kg × ${lastSet.reps}회 <span class="text-blue-300 ml-1">(총 ${totalSets}세트)</span>`;
+            wInput.value = lastSet.weight;
+            rInput.value = lastSet.reps;
+        }
+
+        function renumberSessionSets() {
+            const base = workouts.filter(w => w.date === today && w.exercise === selectedExercise).length;
+            currentSessionSets.forEach((s, i) => { s.setNumber = base + i + 1; });
+        }
+
+        function addSet() {
+            const wInput = document.getElementById('weightInput');
+            const rInput = document.getElementById('repsInput');
+            const weight = parseFloat(wInput.value);
+            const reps = parseInt(rInput.value);
+
+            if (!weight || !reps || isNaN(weight) || isNaN(reps)) {
+                alert('무게와 횟수를 정확히 입력해주세요.');
+                return;
+            }
+
+            currentSessionSets.push({
+                id: makeId(),
+                date: today,
+                bodyPart: selectedBodyPart,
+                exercise: selectedExercise,
+                setNumber: 0,
+                weight: weight,
+                reps: reps
+            });
+            renumberSessionSets();
+            saveDraft(); // ★ 세트를 추가할 때마다 즉시 임시 저장
+            renderCurrentSessionSets();
+            scrollModalToBottom(50);
+        }
+
+        function deleteSessionSet(id) {
+            currentSessionSets = currentSessionSets.filter(s => s.id !== id);
+            renumberSessionSets();
+            saveDraft();
+            renderCurrentSessionSets();
+        }
+
+        function renderCurrentSessionSets() {
+            const listEl = document.getElementById('currentSessionSetsList');
+            if (currentSessionSets.length === 0) {
+                listEl.innerHTML = '';
+                return;
+            }
+            listEl.innerHTML = currentSessionSets.map(set => `
+                <div class="flex justify-between items-center bg-gray-900 border border-gray-700 p-3 rounded-xl text-sm">
+                    <span class="text-blue-400 font-bold">${set.setNumber}세트</span>
+                    <div class="flex items-center space-x-3">
+                        <div class="text-white font-mono text-base">
+                            <span>${set.weight}</span><span class="text-gray-500 text-xs mx-1">kg</span> ×
+                            <span>${set.reps}</span><span class="text-gray-500 text-xs ml-1">회</span>
+                        </div>
+                        <button onclick="deleteSessionSet('${set.id}')" class="p-1 text-gray-500 hover:text-red-400" title="세트 삭제">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>`).join('');
+            lucide.createIcons();
+        }
+
+        function completeExercise() {
+            if (currentSessionSets.length === 0) {
+                alert('추가된 세트가 없습니다.');
+                return;
+            }
+            commitSessionSets();
+            closeModal();
+        }
+
+        // ================= 8. 히스토리 =================
+        function openHistoryModal() {
+            document.getElementById('historyModal').classList.remove('hidden');
+            renderHistorySummary();
+            setTimeout(() => { drawWeightGraph(); lucide.createIcons(); }, 50);
+        }
+        function closeHistoryModal() {
+            document.getElementById('historyModal').classList.add('hidden');
+        }
+
+        function renderHistorySummary() {
+            const listArea = document.getElementById('historyListArea');
+            if (workouts.length === 0) {
+                listArea.innerHTML = '<div class="text-center p-8 bg-gray-800 rounded-2xl text-gray-500 border border-gray-700 border-dashed">저장된 운동 기록이 없습니다.</div>';
+                return;
+            }
+            const groupedByDate = {};
+            workouts.forEach(w => {
+                if (!groupedByDate[w.date]) groupedByDate[w.date] = [];
+                groupedByDate[w.date].push(w);
+            });
+            const sortedDates = Object.keys(groupedByDate).sort((a, b) => b.localeCompare(a));
+            const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+
+            let html = '';
+            sortedDates.forEach(dateStr => {
+                const [y, m, d] = dateStr.split('-').map(Number);
+                const dateObj = new Date(y, m - 1, d); // 로컬 날짜 기준
+                const partCounts = {};
+                groupedByDate[dateStr].forEach(w => { partCounts[w.bodyPart] = (partCounts[w.bodyPart] || 0) + 1; });
+                const summaryStr = Object.entries(partCounts)
+                    .map(([part, count]) => `<span class="text-blue-300 font-bold">${part}</span> ${count}세트`)
+                    .join(', ');
+                html += `
+                    <div class="bg-gray-800 p-4 rounded-2xl border border-gray-700 shadow-sm flex flex-col space-y-1">
+                        <span class="text-sm font-medium text-gray-400">${m}월 ${d}일 (${dayNames[dateObj.getDay()]})</span>
+                        <span class="text-base text-gray-200 leading-relaxed">${summaryStr}</span>
+                    </div>`;
+            });
+            listArea.innerHTML = html;
+        }
+
+        function drawWeightGraph() {
+            const canvas = document.getElementById('weightChart');
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            if (rect.width === 0) return;
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            const ctx = canvas.getContext('2d');
+
+            const weightData = [];
+            Object.keys(dailyStats).sort().forEach(date => {
+                if (dailyStats[date].weight) weightData.push({ date: date, weight: parseFloat(dailyStats[date].weight) });
+            });
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (weightData.length < 2) {
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '13px Pretendard, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('체중 변화 그래프를 보려면 2일 이상의 기록이 필요합니다.', canvas.width / 2, canvas.height / 2);
+                return;
+            }
+
+            const weights = weightData.map(d => d.weight);
+            const maxW = Math.max(...weights);
+            const minW = Math.min(...weights);
+            const paddingX = 25, paddingTop = 30, paddingBottom = 25;
+            const graphWidth = canvas.width - paddingX * 2;
+            const graphHeight = canvas.height - paddingTop - paddingBottom;
+            const weightRange = (maxW - minW) === 0 ? 5 : (maxW - minW);
+            const pos = (data, i) => ({
+                x: paddingX + (i / (weightData.length - 1)) * graphWidth,
+                y: paddingTop + graphHeight - ((data.weight - minW) / weightRange) * graphHeight
+            });
+
+            ctx.beginPath();
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 2.5;
+            ctx.lineJoin = 'round';
+            weightData.forEach((data, i) => {
+                const { x, y } = pos(data, i);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            weightData.forEach((data, i) => {
+                const { x, y } = pos(data, i);
+                ctx.beginPath(); ctx.fillStyle = '#1e3a8a'; ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.fillStyle = '#bfdbfe'; ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#93c5fd';
+                ctx.font = 'bold 12px Pretendard, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(data.weight.toFixed(1), x, y - 12);
+                ctx.fillStyle = '#6b7280';
+                ctx.font = '10px Pretendard, sans-serif';
+                ctx.fillText(data.date.substring(5).replace('-', '/'), x, canvas.height - 5);
+            });
+        }
+
+        // ================= 9. 설정·백업 =================
+        function openSettingsModal() {
+            const { url, token } = getSyncConfig();
+            document.getElementById('syncUrlInput').value = url;
+            document.getElementById('syncTokenInput').value = token;
+            updateSyncStatus();
+            document.getElementById('settingsModal').classList.remove('hidden');
+        }
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').classList.add('hidden');
+        }
+
+        function exportData() {
+            const dataStr = JSON.stringify({ workouts, customExercises, dailyStats });
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `workout_backup_${getTodayDate()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setTimeout(() => alert('데이터 백업 파일(.json)이 다운로드되었습니다. 안전한 곳에 보관해주세요.'), 100);
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (importedData.workouts && importedData.customExercises) {
+                        localStorage.setItem('workouts', JSON.stringify(importedData.workouts));
+                        localStorage.setItem('customExercises', JSON.stringify(importedData.customExercises));
+                        if (importedData.dailyStats) localStorage.setItem('dailyStats', JSON.stringify(importedData.dailyStats));
+                        alert('데이터가 복구되었습니다. 앱을 새로고침합니다.\n(구글 시트에도 반영하려면 설정에서 "기존 기록 전체 보내기"를 눌러 주세요)');
+                        location.reload();
+                    } else {
+                        alert('잘못된 백업 파일 형식입니다. 운동 기록 백업 파일이 맞는지 확인해주세요.');
+                    }
+                } catch (error) {
+                    alert('파일을 읽는 중 오류가 발생했습니다.');
+                    console.error(error);
+                }
+                event.target.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        // 폰 안의 기록만 지움. 구글 시트 설정과 시트 데이터는 유지
+        function resetData() {
+            if (confirm('폰에 저장된 운동 기록이 모두 삭제됩니다. 계속하시겠습니까?\n(구글 시트에 이미 보낸 기록과 시트 연결 설정은 그대로 남습니다)')) {
+                ['workouts', 'customExercises', 'dailyStats', 'draftSession', 'syncQueue', 'lastSyncAt']
+                    .forEach(k => localStorage.removeItem(k));
+                location.reload();
+            }
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
