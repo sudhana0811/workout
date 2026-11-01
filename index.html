@@ -29,9 +29,15 @@
                 <span id="syncDot" class="hidden absolute top-0.5 right-0.5 w-2.5 h-2.5 bg-amber-400 rounded-full border-2 border-gray-900"></span>
             </button>
         </div>
+        <div class="flex items-center space-x-2 bg-gray-800 rounded-xl p-3 shadow-inner mb-2">
+            <i data-lucide="calendar" class="w-5 h-5 text-gray-400"></i>
+            <span class="text-sm text-gray-300">기록 날짜:</span>
+            <input type="date" id="recordDateInput" class="bg-gray-700 text-white text-sm px-2 py-1 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="changeRecordDate(this.value)">
+            <button id="todayBtn" onclick="changeRecordDate(today)" class="hidden ml-auto text-xs px-2.5 py-1 rounded-lg bg-blue-600 text-white font-bold active:scale-95">오늘로</button>
+        </div>
         <div class="flex items-center space-x-2 bg-gray-800 rounded-xl p-3 shadow-inner">
             <i data-lucide="scale" class="w-5 h-5 text-gray-400"></i>
-            <span class="text-sm text-gray-300">오늘의 체중:</span>
+            <span id="weightLabel" class="text-sm text-gray-300">오늘의 체중:</span>
             <input type="number" inputmode="decimal" id="bodyWeightInput" placeholder="00.0"
                 class="bg-transparent border-b border-gray-600 w-16 text-right text-white focus:outline-none focus:border-blue-500 transition-colors"
                 onchange="saveBodyWeight(this.value)">
@@ -50,7 +56,7 @@
 
         <section>
             <h2 class="text-base font-bold text-white mb-2 flex items-center">
-                <i data-lucide="dumbbell" class="w-4 h-4 mr-1.5 text-blue-400"></i>오늘의 운동
+                <i data-lucide="dumbbell" class="w-4 h-4 mr-1.5 text-blue-400"></i><span id="workoutTitle">오늘의 운동</span>
             </h2>
             <div id="todaysWorkoutList" class="space-y-2.5"></div>
         </section>
@@ -68,7 +74,7 @@
     <div id="workoutModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex flex-col justify-end">
         <div class="bg-gray-900 rounded-t-3xl shadow-2xl h-[85vh] flex flex-col transform transition-transform border-t border-gray-800">
             <div class="flex justify-between items-center p-5 border-b border-gray-800">
-                <h3 class="text-xl font-bold text-white">운동 추가</h3>
+                <h3 id="modalTitle" class="text-xl font-bold text-white">운동 추가</h3>
                 <button onclick="closeModal()" class="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white">
                     <i data-lucide="x" class="w-5 h-5"></i>
                 </button>
@@ -196,6 +202,7 @@
         };
 
         const today = getTodayDate();
+        let selectedDate = today; // 기록 대상 날짜 (과거 기록 입력용)
         let selectedBodyPart = '가슴';
         let selectedExercise = null;
         let currentSessionSets = []; // 아직 '완료'하지 않은 세트 (임시 저장 대상)
@@ -250,12 +257,14 @@
             const dateObj = new Date();
             document.getElementById('todayDateStr').innerText = `${dateObj.getFullYear()}. ${dateObj.getMonth() + 1}. ${dateObj.getDate()}`;
 
-            if (dailyStats[today]) {
-                document.getElementById('bodyWeightInput').value = dailyStats[today].weight || '';
-            }
+            document.getElementById('recordDateInput').max = today;
 
-            renderLastWorkoutSummary();
-            renderTodaysWorkout();
+            // 임시 저장된 세트가 있으면 그 세트의 날짜로 맞춤
+            const pendingDraft = loadJSON('draftSession', null);
+            if (pendingDraft && pendingDraft.sets && pendingDraft.sets.length > 0 && pendingDraft.sets[0].date) {
+                selectedDate = pendingDraft.sets[0].date;
+            }
+            refreshDateView();
             renderTabs();
 
             restoreDraft();      // 앱이 꺼지기 전 입력 중이던 세트 복원
@@ -264,12 +273,39 @@
         }
 
         function saveBodyWeight(weight) {
-            if (!dailyStats[today]) dailyStats[today] = {};
-            dailyStats[today].weight = weight;
+            if (!dailyStats[selectedDate]) dailyStats[selectedDate] = {};
+            dailyStats[selectedDate].weight = weight;
             saveJSON('dailyStats', dailyStats);
 
-            enqueueItems([{ key: 'weight:' + today, type: 'weight', data: { date: today, weight: weight } }]);
+            enqueueItems([{ key: 'weight:' + selectedDate, type: 'weight', data: { date: selectedDate, weight: weight } }]);
             flushQueue();
+        }
+
+        // 선택한 날짜에 맞춰 화면 전체를 다시 그림
+        function refreshDateView() {
+            document.getElementById('recordDateInput').value = selectedDate;
+            const isToday = selectedDate === today;
+            const [, m, d] = selectedDate.split('-').map(Number);
+            const label = `${m}/${d}`;
+            document.getElementById('weightLabel').innerText = isToday ? '오늘의 체중:' : `${label} 체중:`;
+            document.getElementById('workoutTitle').innerText = isToday ? '오늘의 운동' : `${label} 운동 (과거 기록)`;
+            document.getElementById('todayBtn').classList.toggle('hidden', isToday);
+            const stat = dailyStats[selectedDate];
+            document.getElementById('bodyWeightInput').value = (stat && stat.weight) || '';
+            renderLastWorkoutSummary();
+            renderTodaysWorkout();
+        }
+
+        function changeRecordDate(value) {
+            if (!value) { refreshDateView(); return; }   // 날짜를 지운 경우 원래대로
+            if (value > today) {
+                alert('미래 날짜는 기록할 수 없습니다.');
+                refreshDateView();
+                return;
+            }
+            commitSessionSets();   // 입력 중이던 세트는 원래 날짜로 먼저 저장
+            selectedDate = value;
+            refreshDateView();
         }
 
         // ================= 3. 임시 저장 (입력 중인 세트) =================
@@ -479,9 +515,9 @@
         // ================= 5. 직전 운동 요약 =================
         function renderLastWorkoutSummary() {
             const summaryEl = document.getElementById('lastWorkoutSummary');
-            const pastWorkouts = workouts.filter(w => w.date !== today);
+            const pastWorkouts = workouts.filter(w => w.date < selectedDate);
             if (pastWorkouts.length === 0) {
-                summaryEl.innerText = '이전 운동 기록이 없습니다. 오늘 첫 기록을 남겨보세요!';
+                summaryEl.innerText = '이전 운동 기록이 없습니다. 첫 기록을 남겨보세요!';
                 return;
             }
             const dates = [...new Set(pastWorkouts.map(w => w.date))].sort().reverse();
@@ -505,10 +541,10 @@
         // ================= 6. 오늘의 운동 =================
         function renderTodaysWorkout() {
             const listEl = document.getElementById('todaysWorkoutList');
-            const todaysData = workouts.filter(w => w.date === today);
+            const todaysData = workouts.filter(w => w.date === selectedDate);
 
             if (todaysData.length === 0) {
-                listEl.innerHTML = `<div class="text-center p-4 bg-gray-800 rounded-xl text-gray-500 border border-gray-700 border-dashed text-sm">오늘 아직 완료한 운동이 없습니다.</div>`;
+                listEl.innerHTML = `<div class="text-center p-4 bg-gray-800 rounded-xl text-gray-500 border border-gray-700 border-dashed text-sm">${selectedDate === today ? '오늘' : '이 날'} 아직 완료한 운동이 없습니다.</div>`;
                 return;
             }
 
@@ -547,6 +583,8 @@
 
         // ================= 7. 운동 입력 모달 =================
         function openModal() {
+            const [, mm, dd] = selectedDate.split('-').map(Number);
+            document.getElementById('modalTitle').innerText = selectedDate === today ? '운동 추가' : `운동 추가 · ${mm}/${dd} (과거)`;
             document.getElementById('workoutModal').classList.remove('hidden');
             renderTabs();
             renderExercises(selectedBodyPart);
@@ -663,9 +701,9 @@
             const wInput = document.getElementById('weightInput');
             const rInput = document.getElementById('repsInput');
 
-            const pastRecords = workouts.filter(w => w.exercise === exName && w.date !== today);
+            const pastRecords = workouts.filter(w => w.exercise === exName && w.date < selectedDate);
             if (pastRecords.length === 0) {
-                bannerEl.innerHTML = `최근 기록이 없습니다.<br><span class="text-xs text-blue-300">오늘 첫 세트를 기록해보세요!</span>`;
+                bannerEl.innerHTML = `최근 기록이 없습니다.<br><span class="text-xs text-blue-300">첫 세트를 기록해보세요!</span>`;
                 wInput.value = '';
                 rInput.value = '';
                 return;
@@ -684,7 +722,7 @@
         }
 
         function renumberSessionSets() {
-            const base = workouts.filter(w => w.date === today && w.exercise === selectedExercise).length;
+            const base = workouts.filter(w => w.date === selectedDate && w.exercise === selectedExercise).length;
             currentSessionSets.forEach((s, i) => { s.setNumber = base + i + 1; });
         }
 
@@ -701,7 +739,7 @@
 
             currentSessionSets.push({
                 id: makeId(),
-                date: today,
+                date: selectedDate,
                 bodyPart: selectedBodyPart,
                 exercise: selectedExercise,
                 setNumber: 0,
