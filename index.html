@@ -166,6 +166,7 @@
                         <button onclick="flushQueue(true)" class="py-2.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-lg active:scale-95">미전송분 지금 보내기</button>
                         <button onclick="sendAllRecords()" class="py-2.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-lg active:scale-95">기존 기록 전체 보내기</button>
                     </div>
+                    <button onclick="restoreFromSheet()" class="w-full py-2.5 bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-bold rounded-lg active:scale-95">시트에서 기록 불러오기 (복원)</button>
                 </div>
 
                 <div class="bg-blue-900/30 border border-blue-800/50 rounded-xl p-4 text-sm text-blue-200">
@@ -451,7 +452,7 @@
             }
 
             if (success && loadQueue().length > 0) {
-                flushQueue(); // 남은 것 계속 전송
+                await flushQueue(); // 남은 것 계속 전송
             } else if (manual) {
                 alert(success ? '구글 시트로 전송했습니다.' : `전송 실패: ${lastSyncError}\n(데이터는 폰에 남아 있고 나중에 다시 보냅니다)`);
             }
@@ -509,6 +510,89 @@
         function saveSyncSettingsSilently() {
             localStorage.setItem('syncUrl', document.getElementById('syncUrlInput').value.trim());
             localStorage.setItem('syncToken', document.getElementById('syncTokenInput').value);
+        }
+
+        // ---- 시트 → 앱 복원 ----
+        // 시트에서 받은 데이터를 이 폰의 기록과 합침. 폰에 이미 있는 세트(같은 id)는 폰 쪽을 그대로 둠.
+        function mergeFromSheet(data) {
+            const isDate = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d));
+            const unsafeName = n => /['"`\\<>]/.test(n);   // 종목 버튼 코드를 깨뜨릴 수 있는 글자
+            const localIds = new Set(workouts.map(w => w.id));
+            const added = [];
+            let skippedBad = 0, alreadyHere = 0;
+
+            (data.sets || []).forEach(r => {
+                const id = String(r.id || '');
+                const weight = Number(r.weight), reps = Number(r.reps), setNumber = Number(r.setNumber);
+                if (!id || !isDate(r.date) || !r.bodyPart || !r.exercise || !(weight > 0) || !(reps > 0) || !(setNumber > 0)) {
+                    skippedBad++;
+                    return;
+                }
+                if (localIds.has(id)) { alreadyHere++; return; }
+                localIds.add(id);
+                added.push({ id, date: String(r.date), bodyPart: String(r.bodyPart), exercise: String(r.exercise), setNumber, weight, reps });
+            });
+
+            // 날짜, 세트 번호 순 (같으면 시트 순서 유지)
+            added.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.setNumber - b.setNumber);
+            workouts = workouts.concat(added);
+            workouts.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);   // 같은 날짜 안의 순서는 유지
+
+            // 종목 목록 복원 (새 폰이면 기본 목록만 있으므로, 기록에 있는 종목을 버튼으로 되살림)
+            let listAdded = 0;
+            added.forEach(a => {
+                if (unsafeName(a.exercise) || unsafeName(a.bodyPart)) return;
+                if (!customExercises[a.bodyPart]) customExercises[a.bodyPart] = [];
+                if (!customExercises[a.bodyPart].includes(a.exercise)) { customExercises[a.bodyPart].push(a.exercise); listAdded++; }
+            });
+
+            // 체중: 폰에 값이 없는 날짜만 채움
+            let weightsAdded = 0;
+            (data.weights || []).forEach(r => {
+                if (!isDate(r.date) || r.weight === '' || r.weight == null || !(Number(r.weight) > 0)) return;
+                if (!dailyStats[r.date]) dailyStats[r.date] = {};
+                if (!dailyStats[r.date].weight) { dailyStats[r.date].weight = String(r.weight); weightsAdded++; }
+            });
+
+            saveJSON('workouts', workouts);
+            saveJSON('customExercises', customExercises);
+            saveJSON('dailyStats', dailyStats);
+            return { added: added.length, alreadyHere, skippedBad, listAdded, weightsAdded };
+        }
+
+        async function restoreFromSheet() {
+            const { url, token } = getSyncConfig();
+            if (!url) { alert('먼저 구글 시트 URL과 비밀키를 설정해 주세요.'); return; }
+            if (!navigator.onLine) { alert('인터넷에 연결된 상태에서 눌러 주세요.'); return; }
+            if (!confirm('시트에 저장된 기록을 불러와 이 폰의 기록과 합칩니다.\n\n• 이 폰에 이미 있는 기록은 그대로 두고, 없는 기록만 추가해요.\n• 예전에 앱에서 지웠는데 시트에 남아 있던 기록은 다시 나타날 수 있어요.\n\n계속할까요?')) return;
+
+            // 아직 못 보낸 수정·삭제가 있으면 먼저 보냄 (지운 기록이 되살아나거나 수정이 덮이는 것을 막기 위해)
+            await flushQueue();
+            const pending = loadQueue().length;
+            if (pending > 0) {
+                alert(`아직 시트로 보내지 못한 변경이 ${pending}건 있어요.\n인터넷 연결을 확인하고 잠시 뒤 다시 눌러 주세요.\n(먼저 보내지 않으면 지운 기록이 되살아날 수 있어요)`);
+                return;
+            }
+
+            let data;
+            try {
+                const res = await fetch(url, { method: 'POST', body: JSON.stringify({ token: token, action: 'export' }) });
+                data = await res.json();
+            } catch (e) {
+                alert(`시트에서 불러오지 못했습니다: ${e.message}`);
+                return;
+            }
+            if (!data.ok) { alert(`시트에서 불러오지 못했습니다: ${data.error || '알 수 없는 오류'}`); return; }
+            if (!Array.isArray(data.sets)) {
+                alert('시트 코드가 예전 버전이라 불러오기를 지원하지 않아요.\n새 Code.gs로 다시 배포해 주세요.');
+                return;
+            }
+
+            const r = mergeFromSheet(data);
+            renderTabs();
+            refreshDateView();
+            updateSyncStatus();
+            alert(`시트에서 불러왔어요.\n\n• 새로 추가된 세트: ${r.added}건\n• 이미 폰에 있던 세트: ${r.alreadyHere}건\n• 체중 기록 추가: ${r.weightsAdded}건\n• 종목 버튼 복원: ${r.listAdded}개` + (r.skippedBad ? `\n• 형식이 맞지 않아 건너뛴 줄: ${r.skippedBad}건` : ''));
         }
 
         // 기존 기록 전부 전송 (시트 쪽에서 ID로 중복을 걸러내므로 여러 번 눌러도 안전)
