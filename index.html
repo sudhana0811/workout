@@ -205,8 +205,9 @@
                     <input type="date" id="editExerciseDate" class="flex-1 bg-gray-700 text-white text-sm px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 <div id="editRows" class="space-y-2.5"></div>
+                <button onclick="addEditRow()" class="w-full py-2.5 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded-xl border border-gray-600 active:scale-95 transition-all">+ 세트 추가</button>
                 <button onclick="saveEditedExercise()" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-all">수정 저장</button>
-                <p class="text-[11px] text-gray-500 text-center">휴지통을 눌러도 '수정 저장'을 누르기 전까지는 되돌릴 수 있어요.</p>
+                <p class="text-[11px] text-gray-500 text-center">삭제한 세트는 저장 전까지 되돌릴 수 있고, 창을 닫으면 모든 변경이 취소돼요.</p>
             </div>
         </div>
     </div>
@@ -542,7 +543,7 @@
             const sets = workouts.filter(w => w.date === selectedDate && w.exercise === exercise && w.bodyPart === part);
             if (sets.length === 0) return;
             editGroup = { part, exercise, date: selectedDate };
-            editRows = sets.map(w => ({ id: w.id, weight: w.weight, reps: w.reps, deleted: false }));
+            editRows = sets.map(w => ({ id: w.id, weight: w.weight, reps: w.reps, deleted: false, isNew: false }));
 
             const [, m, d] = selectedDate.split('-').map(Number);
             document.getElementById('editExerciseTitle').innerText = `${exercise} · ${m}/${d}`;
@@ -587,7 +588,31 @@
             lucide.createIcons();
         }
 
-        function deleteEditRow(i) { editRows[i].deleted = true; renderEditRows(); }
+        function deleteEditRow(i) {
+            if (editRows[i].isNew) editRows.splice(i, 1);   // 아직 저장 전인 새 줄은 그냥 지움
+            else editRows[i].deleted = true;
+            renderEditRows();
+        }
+
+        // 편집 창에서 세트 추가: 마지막 줄의 무게·횟수를 그대로 가져옴
+        function addEditRow() {
+            const live = editRows.filter(r => !r.deleted);
+            const last = live[live.length - 1];
+            editRows.push({
+                id: makeId(),
+                weight: last ? last.weight : '',
+                reps: last ? last.reps : '',
+                deleted: false,
+                isNew: true
+            });
+            renderEditRows();
+            // 새 줄의 무게 칸으로 이동
+            setTimeout(() => {
+                const rows = document.querySelectorAll('#editRows > div');
+                const lastInput = rows[rows.length - 1].querySelector('input');
+                if (lastInput) { lastInput.scrollIntoView({ block: 'center', behavior: 'smooth' }); lastInput.focus(); lastInput.select(); }
+            }, 50);
+        }
         function undoEditRow(i) { editRows[i].deleted = false; renderEditRows(); }
 
         // 같은 날·같은 종목의 세트 번호를 저장 순서대로 1부터 다시 매김 (번호가 바뀐 세트를 반환)
@@ -637,9 +662,15 @@
             });
             // 2) 값 수정 + (날짜를 바꿨다면) 이동: 그 날의 마지막 세트들로 들어감
             keep.forEach(r => {
+                const nw = parseFloat(r.weight), nr = parseInt(r.reps);
+                if (r.isNew) {   // 편집 창에서 새로 추가한 세트
+                    const created = { id: r.id, date: newDate, bodyPart: editGroup.part, exercise: exercise, setNumber: 0, weight: nw, reps: nr };
+                    workouts.push(created);
+                    touched.push(created);
+                    return;
+                }
                 const w = workouts.find(x => x.id === r.id);
                 if (!w) return;
-                const nw = parseFloat(r.weight), nr = parseInt(r.reps);
                 if (w.weight !== nw || w.reps !== nr) { w.weight = nw; w.reps = nr; touched.push(w); }
                 if (newDate !== oldDate) {
                     workouts.splice(workouts.indexOf(w), 1);
