@@ -748,6 +748,9 @@
                     <button onclick="deleteExercise('${part}', '${ex}', event)" class="absolute -top-1.5 -right-1.5 bg-gray-700 hover:bg-red-500 text-gray-300 hover:text-white border border-gray-600 rounded-full w-6 h-6 flex items-center justify-center shadow-md transition-colors z-10" title="삭제">
                         <i data-lucide="x" class="w-3.5 h-3.5"></i>
                     </button>
+                    <button onclick="renameExercise('${part}', '${ex}', event)" class="absolute -top-1.5 -left-1.5 bg-gray-700 hover:bg-blue-500 text-gray-300 hover:text-white border border-gray-600 rounded-full w-6 h-6 flex items-center justify-center shadow-md transition-colors z-10" title="이름 수정">
+                        <i data-lucide="pencil" class="w-3 h-3"></i>
+                    </button>
                 </div>`).join('');
 
             html += `
@@ -763,6 +766,7 @@
             const newEx = prompt(`'${selectedBodyPart}' 부위에 추가할 새 운동 이름을 입력하세요.`);
             if (newEx && newEx.trim() !== '') {
                 const trimmedEx = newEx.trim();
+                if (!validateExerciseName(trimmedEx)) return;
                 if (!customExercises || typeof customExercises !== 'object' || Array.isArray(customExercises)) {
                     customExercises = JSON.parse(JSON.stringify(defaultExercises));
                 }
@@ -773,6 +777,73 @@
                 }
                 selectExercise(trimmedEx);
             }
+        }
+
+        // 따옴표 등은 버튼 코드를 깨뜨릴 수 있어 종목 이름에 쓰지 못하게 함
+        function validateExerciseName(name) {
+            if (!name) return false;
+            if (/['"`\\<>]/.test(name)) {
+                alert('종목 이름에는 따옴표( \' " ` ), 역슬래시( \\ ), < > 를 쓸 수 없어요.');
+                return false;
+            }
+            return true;
+        }
+
+        // 종목 이름 수정: 목록 + 지난 기록 + 입력 중인 세트를 모두 새 이름으로 바꾸고 시트에도 반영
+        function renameExercise(part, oldName, event) {
+            event.stopPropagation();
+            const input = prompt(`'${oldName}'의 새 이름을 입력하세요.\n(이전에 기록한 운동도 모두 새 이름으로 바뀝니다)`, oldName);
+            if (input === null) return;
+            const newName = input.trim();
+            if (!newName || newName === oldName) return;
+            if (!validateExerciseName(newName)) return;
+
+            const list = customExercises[part] || [];
+            const idx = list.indexOf(oldName);
+            const exists = list.includes(newName);
+            if (exists && !confirm(`'${newName}'은(는) 이미 있는 종목입니다.\n두 종목의 기록을 '${newName}' 하나로 합칠까요?`)) return;
+
+            // 1) 종목 목록
+            if (idx >= 0) {
+                if (exists) list.splice(idx, 1);
+                else list[idx] = newName;
+            }
+            saveJSON('customExercises', customExercises);
+
+            // 2) 지난 기록 (같은 부위의 같은 이름만)
+            const touched = [];
+            const dates = new Set();
+            workouts.forEach(w => {
+                if (w.exercise === oldName && w.bodyPart === part) {
+                    w.exercise = newName;
+                    touched.push(w);
+                    dates.add(w.date);
+                }
+            });
+            if (exists) { // 합친 경우 같은 날 세트 번호를 다시 매김
+                dates.forEach(d => renumberGroup(d, newName).forEach(x => { if (!touched.includes(x)) touched.push(x); }));
+            }
+            saveJSON('workouts', workouts);
+
+            // 3) 지금 입력 중이던 세트
+            let draftChanged = false;
+            currentSessionSets.forEach(x => {
+                if (x.exercise === oldName && x.bodyPart === part) { x.exercise = newName; draftChanged = true; }
+            });
+            if (selectedExercise === oldName && selectedBodyPart === part) {
+                selectedExercise = newName;
+                document.getElementById('selectedExerciseTitle').innerText = newName;
+                loadLastRecord(newName);
+            }
+            if (draftChanged) saveDraft();
+
+            // 4) 시트 전송 대기열 + 화면 갱신
+            enqueueItems(touched.map(x => ({ key: 'set:' + x.id, type: 'set', data: x })));
+            renderExercises(selectedBodyPart);
+            renderCurrentSessionSets();
+            refreshDateView();
+            flushQueue();
+            alert(`'${oldName}' → '${newName}'\n지난 기록 ${touched.length}건도 함께 바꿨습니다.`);
         }
 
         function deleteExercise(part, exName, event) {
