@@ -92,7 +92,7 @@
                     <div class="flex items-center justify-center space-x-4">
                         <div class="flex flex-col items-center w-24">
                             <label class="text-xs text-gray-400 mb-1">무게(kg)</label>
-                            <input type="number" inputmode="decimal" id="weightInput" class="w-full bg-gray-700 text-white text-center text-xl py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0">
+                            <input type="number" inputmode="decimal" id="weightInput" class="w-full bg-gray-700 text-white text-center text-xl py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="kg">
                         </div>
                         <span class="text-2xl text-gray-500 mt-5">×</span>
                         <div class="flex flex-col items-center w-24">
@@ -524,7 +524,7 @@
             (data.sets || []).forEach(r => {
                 const id = String(r.id || '');
                 const weight = Number(r.weight), reps = Number(r.reps), setNumber = Number(r.setNumber);
-                if (!id || !isDate(r.date) || !r.bodyPart || !r.exercise || !(weight > 0) || !(reps > 0) || !(setNumber > 0)) {
+                if (!id || !isDate(r.date) || !r.bodyPart || !r.exercise || r.weight === '' || r.weight == null || !(weight >= 0) || !(reps > 0) || !(setNumber > 0)) {
                     skippedBad++;
                     return;
                 }
@@ -726,8 +726,8 @@
             const removed = editRows.filter(r => r.deleted);
             for (let i = 0; i < keep.length; i++) {
                 const w = parseFloat(keep[i].weight), rp = parseInt(keep[i].reps);
-                if (!w || !rp || isNaN(w) || isNaN(rp) || w < 0 || rp < 0) {
-                    alert(`${i + 1}세트의 무게와 횟수를 정확히 입력해주세요.`);
+                if (isNaN(w) || isNaN(rp) || w < 0 || rp < 1) {
+                    alert(`${i + 1}세트의 무게와 횟수를 정확히 입력해주세요.\n(맨몸운동은 무게에 0을 입력하세요)`);
                     return;
                 }
             }
@@ -1069,8 +1069,8 @@
             const weight = parseFloat(wInput.value);
             const reps = parseInt(rInput.value);
 
-            if (!weight || !reps || isNaN(weight) || isNaN(reps)) {
-                alert('무게와 횟수를 정확히 입력해주세요.');
+            if (isNaN(weight) || isNaN(reps) || weight < 0 || reps < 1) {
+                alert('무게와 횟수를 정확히 입력해주세요.\n(맨몸운동은 무게에 0을 입력하세요)');
                 return;
             }
 
