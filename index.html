@@ -89,15 +89,22 @@
                     <h4 id="selectedExerciseTitle" class="text-lg font-bold text-blue-400 text-center">운동명</h4>
                     <div class="bg-blue-900/30 text-blue-200 p-3 rounded-xl text-sm text-center border border-blue-800/50" id="lastRecordBanner">이전 기록을 찾는 중...</div>
 
-                    <div class="flex items-center justify-center space-x-4">
-                        <div class="flex flex-col items-center w-24">
-                            <label class="text-xs text-gray-400 mb-1">무게(kg)</label>
-                            <input type="number" inputmode="decimal" id="weightInput" class="w-full bg-gray-700 text-white text-center text-xl py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="kg">
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <label class="text-sm text-gray-400 w-16">무게(kg)</label>
+                            <div class="flex items-center space-x-2">
+                                <button type="button" onclick="stepValue('weightInput', -1, 0)" class="touch-manipulation w-11 h-11 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-white text-2xl font-bold rounded-xl border border-gray-600 flex items-center justify-center select-none" aria-label="무게 1 줄이기">−</button>
+                                <input type="number" inputmode="decimal" id="weightInput" class="w-24 h-11 bg-gray-700 text-white text-center text-xl rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="kg">
+                                <button type="button" onclick="stepValue('weightInput', 1, 0)" class="touch-manipulation w-11 h-11 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-white text-2xl font-bold rounded-xl border border-gray-600 flex items-center justify-center select-none" aria-label="무게 1 늘리기">+</button>
+                            </div>
                         </div>
-                        <span class="text-2xl text-gray-500 mt-5">×</span>
-                        <div class="flex flex-col items-center w-24">
-                            <label class="text-xs text-gray-400 mb-1">횟수(회)</label>
-                            <input type="number" inputmode="numeric" id="repsInput" class="w-full bg-gray-700 text-white text-center text-xl py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0">
+                        <div class="flex items-center justify-between">
+                            <label class="text-sm text-gray-400 w-16">횟수(회)</label>
+                            <div class="flex items-center space-x-2">
+                                <button type="button" onclick="stepValue('repsInput', -1, 1)" class="touch-manipulation w-11 h-11 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-white text-2xl font-bold rounded-xl border border-gray-600 flex items-center justify-center select-none" aria-label="횟수 1 줄이기">−</button>
+                                <input type="number" inputmode="numeric" id="repsInput" class="w-24 h-11 bg-gray-700 text-white text-center text-xl rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="회">
+                                <button type="button" onclick="stepValue('repsInput', 1, 1)" class="touch-manipulation w-11 h-11 bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-white text-2xl font-bold rounded-xl border border-gray-600 flex items-center justify-center select-none" aria-label="횟수 1 늘리기">+</button>
+                            </div>
                         </div>
                     </div>
 
@@ -1061,6 +1068,14 @@
         function renumberSessionSets() {
             const base = workouts.filter(w => w.date === selectedDate && w.exercise === selectedExercise).length;
             currentSessionSets.forEach((s, i) => { s.setNumber = base + i + 1; });
+        }
+
+        // 무게·횟수 ±버튼: 칸의 현재 값에서 delta만큼 바꿈 (비어 있으면 0에서 시작, min 아래로는 내려가지 않음)
+        function stepValue(inputId, delta, min) {
+            const el = document.getElementById(inputId);
+            const cur = parseFloat(el.value);
+            const base = isNaN(cur) ? 0 : cur;
+            el.value = Math.round(Math.max(min, base + delta) * 100) / 100;   // 소수점 오차 방지
         }
 
         function addSet() {
